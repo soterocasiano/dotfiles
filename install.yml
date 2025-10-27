@@ -1,6 +1,7 @@
 ---
 - name: Setup local environment
   hosts: local
+  become: true
   tasks:
     - name: Common Dirs
       ansible.builtin.file:

@@ -3,6 +3,7 @@
 
 - name: macOS environment setup
   hosts: local
+  become: true
   tasks:
     - name: Install applications via Homebrew Cask
       homebrew_cask:
@@ -11,3 +12,21 @@
         accept_external_apps: true
       loop: "{{ macos_apps }}"
       ignore_errors: true
+
+    - name: Map Control key to Command key
+      shell: |
+        # Get the current keyboard ID
+        KEYBOARD_ID=$(ioreg -n IOHIDKeyboard -r | grep -E 'VendorID|ProductID' | awk 'NR%2{printf "%s-", $0; next}{print $0}' | head -1 | sed 's/.*= //g' | tr '\n' '-' | sed 's/-$//')
+
+        # Set Control key to map to Command
+        defaults -currentHost write -g com.apple.keyboard.modifiermapping.${KEYBOARD_ID} -array '<dict><key>HIDKeyboardModifierMappingDst</key><integer>1048576</integer><key>HIDKeyboardModifierMappingSrc</key><integer>262144</integer></dict>'
+      tags: keyboard
+
+    - name: Map Command key to Control key
+      shell: |
+        # Get the current keyboard ID
+        KEYBOARD_ID=$(ioreg -n IOHIDKeyboard -r | grep -E 'VendorID|ProductID' | awk 'NR%2{printf "%s-", $0; next}{print $0}' | head -1 | sed 's/.*= //g' | tr '\n' '-' | sed 's/-$//')
+
+        # Set Command key to map to Control
+        defaults -currentHost write -g com.apple.keyboard.modifiermapping.${KEYBOARD_ID} -array-add '<dict><key>HIDKeyboardModifierMappingDst</key><integer>262144</integer><key>HIDKeyboardModifierMappingSrc</key><integer>1048576</integer></dict>'
+      tags: keyboard

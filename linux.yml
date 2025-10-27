@@ -1,8 +1,8 @@
 - name: Setup Linux environment
   hosts: local
+  become: true
   tasks:
     - name: Install Homebrew dependencies
-      become: true
       apt:
         name: "{{ item }}"
         state: present
