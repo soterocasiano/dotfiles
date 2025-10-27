@@ -1,0 +1,39 @@
+---
+- name: Do cross-platform things
+  hosts: local
+  tasks:
+    - name: Make sure common dirs exist
+      ansible.builtin.file:
+        path: "{{ home_dir }}/{{ item }}"
+        state: directory
+        mode: u=rwx
+      loop:
+        - .config
+        - bin
+
+    - name: Link custom scripts
+      ansible.builtin.file:
+        src: "{{ dotfiles_dir }}/bin/{{ item.name }}"
+        dest: "{{ home_dir }}/bin/{{ item.rename | d(item.name) }}"
+        state: link
+      loop:
+        - name: showcert
+        - name: awssm
+        - name: ec2-cache-instances
+        - name: ec2-cache-clear
+        - name: check-service-running
+      when: item.condition | default(true)
+
+    - name: Include other tasks
+      ansible.builtin.include_tasks:
+        file: tasks/{{ taskfile }}.yml
+        apply:
+          tags:
+            - "{{ taskfile }}"
+      tags: [always]
+      loop_control:
+        loop_var: taskfile
+      loop:
+        - git
+        - zsh
+        - cli-tools

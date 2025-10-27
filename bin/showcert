@@ -1,0 +1,92 @@
+#!/usr/bin/env sh
+
+# showcert [-n servername] <file|hostname[:port]>
+# If the argument is a file, show its certificate details.
+# If the argument is a hostname, connect to it and show its certificate.
+# Use -n to override the SNI servername.
+
+usage() {
+  echo "Usage: $(basename $0) [-n servername] <file|hostname[:port]>"
+}
+
+e="$(printf '\033')"
+
+if [ "$(uname)" = "Darwin" ] && command -v brew >/dev/null; then
+  # Give homebrew binaries priority when finding getopt on macOS.
+  export PATH="$(brew --prefix)/opt/gnu-getopt/bin:$PATH"
+fi
+
+getopt --test 2>&1 > /dev/null
+if [ ! $? -eq 4 ]; then
+  echo "Error: GNU getopt not found. Please install it (e.g., 'brew install gnu-getopt' on macOS)." >&2
+  exit 2
+fi
+
+# Use GNU getopt for parsing
+parsed=$(getopt -o n:h --long name:,help -- "$@")
+# Read getopt output to handle quoting quirks.
+eval set -- "$parsed"
+
+servername=""
+
+while true; do
+  case "$1" in
+    -n|--name)
+      servername="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+certloc="$1"
+
+# Use stdin if provided
+if [ ! -t 0 ]; then
+  cert="$(cat -)"
+elif [ -z "$certloc" ]; then
+  usage
+  exit 1
+elif [ -f "$certloc" ]; then
+  # Local file mode
+  echo "\033[0;36mfile:\033[0m $certloc"
+  cert="$(cat "$certloc")"
+else
+  # Remote connect mode
+  host="${certloc%%:*}"
+  port="${certloc##*:}"
+  if [ "$host" = "$port" ]; then
+    port="443"
+  fi
+  ip="$(host -t A $host | awk '/has.*address/{print $NF; exit}')"
+  echo "\033[0;36mconnect:\033[0m $ip:$port"
+  echo "\033[0;35m"
+  sni="${servername:-$host}"
+  cert="$(echo QUIT | openssl s_client -connect $ip:$port -servername $sni | openssl x509 -outform pem)"
+fi
+
+echo "\033[0m"
+# I don't know why, but this prevents the command from hanging at this point sometimes.
+# echo ""
+echo "$cert" | openssl x509 -noout -text -certopt no_sigdump,no_pubkey,no_serial,no_version,no_extensions \
+  | sed "s/Issuer:\(.*\)$/${e}[0;36mIssuer:${e}[1;33m\1${e}[0m/g" \
+  | sed "s/Not Before:\(.*\)$/${e}[0;36mNot Before:${e}[1;33m\1${e}[0m/g" \
+  | sed "s/Not After :\(.*\)$/${e}[0;36mNot After :${e}[1;36m\1${e}[0m/g" \
+  | sed "s/Subject:\(.*\)$/${e}[0;36mSubject:${e}[0;32m\1${e}[0m/g" \
+  | sed "s/CN=\([^,]\{1,\}\)/${e}[0;36mCN=${e}[1;32m\1${e}[0m/g"
+echo "$cert" | openssl x509 -noout -text | grep -A1 'X509v3 Subject Alternative Name' \
+  | sed "s/DNS:\([^,]\{1,\}\)/${e}[0;36mDNS:${e}[1;32m\1${e}[0m/g"
+printf "        ${e}[0;36mSerial: "
+echo "$cert" | openssl x509 -noout -text | grep -A1 'Serial Number:' | tail -n1 \
+  | tr -d ' ' \
+  | sed "s/\([0-9a-f]\{2\}\)/${e}[0;32m\1${e}[0m/g"

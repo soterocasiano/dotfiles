@@ -1,0 +1,97 @@
+#!/usr/bin/env sh
+
+USAGE='check-service-running [<service-name> [<instance-name-prefix1,prefix2,...>@]<profile>]'
+
+service_name="$1"
+target="$2"
+
+if ! (which jq > /dev/null); then
+    echo "Requires jq"
+    exit 3
+fi
+
+if ! (which fzf > /dev/null); then
+    echo "Requires fzf"
+    exit 3
+fi
+
+if [ ! -z "$target" ]; then
+    if (echo "$target" | grep '@' > /dev/null); then
+        instance_search="${target%%@*}"
+        export AWS_PROFILE="${target##*@}"
+    else
+        instance_search=""
+        export AWS_PROFILE="$target"
+    fi
+fi
+
+if [ -z "$AWS_PROFILE" ]; then
+    echo "Select AWS profile:"
+    export AWS_PROFILE=$(aws configure list-profiles | fzf)
+fi
+
+if ! (aws sts get-caller-identity > /dev/null); then
+    echo "You must configure AWS credentials or login via SSO."
+    exit 2
+fi
+
+if [ -z "$service_name" ]; then
+    echo "Service name must be provided"
+    exit 5
+fi
+
+cachefile=$(ec2-cache-instances)
+
+# Convert comma-separated prefixes to jq array format for filtering
+if [ ! -z "$instance_search" ]; then
+    # Convert comma-separated list to jq array format
+    prefix_array=$(echo "$instance_search" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+else
+    prefix_array='[]'
+fi
+
+instance_ids=$(cat "$cachefile" | jq -r --argjson prefixes "$prefix_array" '
+        .Reservations[].Instances[]
+        | select(.State.Name == "running")
+        | select(
+            ($prefixes | length == 0) or
+            (($prefixes | length > 0) and (((.Tags // empty) | from_entries).Name as $name | $prefixes | any(. as $prefix | $name | startswith($prefix))))
+        )
+        | .InstanceId' )
+
+if [ -z "$instance_ids" ]; then
+    echo "No instances found"
+    exit 4
+fi
+
+# Get instance names for better output
+instance_info=$(cat "$cachefile" | jq -r --argjson prefixes "$prefix_array" '
+        .Reservations[].Instances[]
+        | select(.State.Name == "running")
+        | select(.Platform != "windows")
+        | select(
+            ($prefixes | length == 0) or
+            (($prefixes | length > 0) and (((.Tags // empty) | from_entries).Name as $name | $prefixes | any(. as $prefix | $name | startswith($prefix))))
+        )
+        | .InstanceId + " " + (((.Tags // empty) | from_entries).Name // "unnamed")' )
+
+echo "$instance_info" | while read instance_id instance_name; do
+    echo "Checking service '$service_name' on instance: $instance_name ($instance_id)"
+
+    COMMAND_ID=$(aws ssm send-command \
+    --instance-ids $instance_id \
+    --document-name "AWS-RunShellScript" \
+    --comment "Check $service_name status" \
+    --parameters 'commands=["systemctl is-active '"$service_name"'"]' \
+    --query 'Command.CommandId' --output text)
+
+    until [ "$(aws ssm get-command-invocation --instance-id "$instance_id" --command-id "$COMMAND_ID" --query 'Status' --output text)" != "InProgress" ]; do
+        echo "  Waiting for command to finish..."
+        sleep 1
+    done
+
+    # Get output of the command
+    aws ssm get-command-invocation --instance-id "$instance_id" --command-id "$COMMAN_ID" | jq -r '
+            .StandardOutputContent as $output
+            | "  Result: " + $output'
+done

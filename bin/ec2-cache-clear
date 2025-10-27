@@ -1,0 +1,18 @@
+#!/bin/sh
+
+export AWS_PROFILE="${1:-$AWS_PROFILE}"
+
+if [ -z "$AWS_PROFILE" ]; then
+    echo "Must set AWS_PROFILE (currently set to: $AWS_PROFILE)"
+    exit 1
+fi
+
+cachedir="$HOME/.cache/my-aws"
+mkdir -p $cachedir
+cachefile="$cachedir/$AWS_PROFILE.instances.json"
+
+if [ -e "$cachefile" ]; then
+    rm "$cachefile"
+fi
+
+echo "$cachefile"

@@ -1,0 +1,46 @@
+---
+- name: Install zsh via APT
+  become: true
+  when: ansible_os_family == 'Debian'
+  apt: name=zsh state=present
+
+- name: Clone repos
+  git:
+    repo: "{{ item.repo }}"
+    dest: "{{ item.dest }}"
+    update: no
+  loop:
+    - repo: https://github.com/robbyrussell/oh-my-zsh
+      dest: ~/.oh-my-zsh
+    - repo: https://github.com/zsh-users/zsh-autosuggestions
+      dest: ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions=
+    - repo: https://github.com/zsh-users/zsh-syntax-highlighting.git
+      dest: ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting
+    - repo: https://github.com/Aloxaf/fzf-tab
+      dest: ~/.oh-my-zsh/custom/plugins/fzf-tab
+
+- name: Link files
+  file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    state: link
+    force: yes
+  loop:
+    - src: "{{ dotfiles_dir }}/.zshrc"
+      dest: "{{ home_dir }}/.zshrc"
+
+- name: Create zsh directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ home_dir }}/.config"
+    - "{{ home_dir }}/.config/zsh"
+    - "{{ home_dir }}/.config/zsh/conf.d"
+
+- name: Link zsh conf.d files
+  file:
+    src: "{{ item }}"
+    dest: "{{ home_dir }}/.config/zsh/conf.d/{{ item | basename }}"
+    state: link
+  loop: "{{ query('fileglob', 'zsh/conf.d/*.zsh') }}"

@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+
+USAGE='sso <profile>]'
+
+profile="$1"
+
+if ! (which jq > /dev/null); then
+    echo "Requires jq"
+    exit 3
+fi
+
+if ! (which fzf > /dev/null); then
+    echo "Requires fzf"
+    exit 3
+fi
+
+if [ -z "$profile" ]; then
+    echo "Select AWS profile:"
+    export profile=$(aws configure list-profiles | fzf)
+fi
+
+aws sso login --profile $profile

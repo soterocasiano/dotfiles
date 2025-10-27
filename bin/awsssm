@@ -1,0 +1,66 @@
+#!/usr/bin/env sh
+
+USAGE='awssm [[<instance-name-prefix>@]<profile>]'
+
+target="$1"
+
+if ! (which jq > /dev/null); then
+    echo "Requires jq"
+    exit 3
+fi
+
+if ! (which fzf > /dev/null); then
+    echo "Requires fzf"
+    exit 3
+fi
+
+if [ ! -z "$target" ]; then
+    if (echo "$target" | grep '@' > /dev/null); then
+        instance_search="${target%%@*}"
+        export AWS_PROFILE="${target##*@}"
+    else
+        instance_search=""
+        export AWS_PROFILE="$target"
+    fi
+fi
+
+if [ -z "$AWS_PROFILE" ]; then
+    echo "Select AWS profile:"
+    export AWS_PROFILE=$(aws configure list-profiles | fzf)
+fi
+
+if ! (aws sts get-caller-identity > /dev/null); then
+    echo "You must configure AWS credentials or login via SSO."
+    exit 2
+fi
+
+# cachefile="$HOME/.cache/awssm/$AWS_PROFILE.instances.json"
+# mkdir -p $(dirname "$cachefile")
+
+# if [ -z "$(find "$cachefile" -mmin -240 2>/dev/null)" ]; then
+#     # Cache file not found, or has not been udpated recently.
+#     echo "Refreshing instance cache at $cachefile ..."
+#     aws ec2 describe-instances > "$cachefile"
+# fi
+cachefile=$(ec2-cache-instances)
+
+instance_id=$(cat "$cachefile" | jq -r '
+        .Reservations[].Instances[]
+        | select(.State.Name == "running")
+        | ((.Tags // empty) | from_entries) as $tags
+        | ($tags.Name) + " [" + .PrivateIpAddress +"] (" + .InstanceId + ") " + .InstanceId' \
+    | fzf -q "$instance_search" --select-1 --with-nth=..-2 \
+    | rev | cut -d' ' -f1 | rev)
+
+if [ -z "$instance_id" ]; then
+    echo "Invalid instance: $instance_id"
+    exit 4
+fi
+
+instance_name=$(cat "$cachefile" | jq --arg id $instance_id -r '
+	.Reservations[].Instances[]
+	| select(.InstanceId == $id)
+	| ((.Tags // empty) | from_entries) as $tags
+	| $tags.Name')
+echo "Connecting to $instance_name ($instance_id)"
+aws ssm start-session --target $instance_id

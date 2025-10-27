@@ -1,0 +1,20 @@
+#!/bin/sh
+
+export AWS_PROFILE="${1:-$AWS_PROFILE}"
+
+if [ -z "$AWS_PROFILE" ]; then
+    echo "Must set AWS_PROFILE (currently set to: $AWS_PROFILE)"
+    exit 1
+fi
+
+cachedir="$HOME/.cache/my-aws"
+mkdir -p $cachedir
+cachefile="$cachedir/$AWS_PROFILE.instances.json"
+
+if [ -z "$(find "$cachefile" -mmin -240 2>/dev/null)" ]; then
+    # Cache file not found, or has not been udpated recently.
+    >&2 echo "Refreshing instance cache at $cachefile ..."
+    aws ec2 describe-instances > "$cachefile"
+fi
+
+echo "$cachefile"
