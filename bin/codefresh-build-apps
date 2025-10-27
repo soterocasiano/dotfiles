@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+
+USAGE='codefresh-build-apps [<BUILD_VERSION> <VALIDATE>]'
+BUILD_VERSION="$1"
+VALIDATE="$2"
+
+if [ -z "$BUILD_VERSION" ]; then
+    echo "BUILD_VERSION must be provided"
+    exit 1
+fi
+
+if [ -z "$VALIDATE" ]; then
+    echo "No Validation Provided, please confirm script usage:"
+    echo "$USAGE"
+    exit 1
+fi
+
+if [ "$VALIDATE" != "YES" ]; then
+    echo "Validation failed, please confirm with 'YES:"
+    exit 1
+fi
+
+echo "Building Mobile Apps with version: $BUILD_VERSION"
+
+result=$(codefresh run ns-mobile-build/build-all --variable BUILD_VERSION="$BUILD_VERSION" -d)
+
+codefresh logs $result --f
