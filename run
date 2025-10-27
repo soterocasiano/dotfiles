@@ -1,0 +1,22 @@
+if [ $(uname) = "Linux" ]; then
+    platform="linux"
+    sudo apt install -y python3-pip python3-venv libffi-dev libssl-dev build-essential
+else
+    platform="macos"
+fi
+
+if [ ! -e ./env/bin/python ]; then
+    echo "Initializing virtualenv..."
+    # virtualenv ./env
+    python3 -m venv ./env
+fi
+
+./env/bin/pip install -U pip
+./env/bin/pip install -r ./requirements.txt
+./env/bin/ansible-galaxy install -r ./requirements.yml
+
+if sudo -n true 2>/dev/null; then
+    ./env/bin/ansible-playbook -i $ansible_vars $platform.yml
+else
+    ./env/bin/ansible-playbook -i $ansible_vars $platform.yml -K
+fi

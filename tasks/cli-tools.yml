@@ -1,0 +1,10 @@
+---
+- name : Install CLI tools
+  become:
+  tasks:
+    - name: Install packages via brew
+      brew:
+        name: " {{ item }} "
+        state: present
+      loop:
+        - grex

@@ -1,0 +1,13 @@
+---
+- import_playbook: install.yml
+
+- name: macOS environment setup
+  hosts: local
+  tasks:
+    - name: Install applications via Homebrew Cask
+      homebrew_cask:
+        state: present
+        name: "{{ item }}"
+        accept_external_apps: true
+      loop: "{{ macos_apps }}"
+      ignore_errors: true

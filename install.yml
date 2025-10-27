@@ -1,8 +1,8 @@
 ---
-- name: Do cross-platform things
+- name: Setup local environment
   hosts: local
   tasks:
-    - name: Make sure common dirs exist
+    - name: Common Dirs
       ansible.builtin.file:
         path: "{{ home_dir }}/{{ item }}"
         state: directory
@@ -11,7 +11,7 @@
         - .config
         - bin
 
-    - name: Link custom scripts
+    - name: Custom Scripts
       ansible.builtin.file:
         src: "{{ dotfiles_dir }}/bin/{{ item.name }}"
         dest: "{{ home_dir }}/bin/{{ item.rename | d(item.name) }}"

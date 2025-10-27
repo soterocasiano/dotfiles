@@ -1,0 +1,16 @@
+- name: Setup Linux environment
+  hosts: local
+  tasks:
+    - name: Install Homebrew dependencies
+      become: true
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - build-essential
+        - procps
+        - curl
+        - file
+        - git
+
+- import_playbook: install.yml
