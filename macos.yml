@@ -30,3 +30,4 @@
         # Set Command key to map to Control
         defaults -currentHost write -g com.apple.keyboard.modifiermapping.${KEYBOARD_ID} -array-add '<dict><key>HIDKeyboardModifierMappingDst</key><integer>262144</integer><key>HIDKeyboardModifierMappingSrc</key><integer>1048576</integer></dict>'
       tags: keyboard
+

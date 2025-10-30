@@ -1,0 +1,146 @@
+{
+  "mcpServers": {
+    "atlassian": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-atlassian@latest"
+      ],
+      "env": {
+        "ATLASSIAN_CLOUD_ID": "${ATLASSIAN_CLOUD_ID}",
+        "ATLASSIAN_API_TOKEN": "${ATLASSIAN_API_TOKEN}",
+        "ATLASSIAN_EMAIL": "${ATLASSIAN_EMAIL}"
+      },
+      "disabled": false,
+      "alwaysAllow": [
+        "atl_search",
+        "atl_fetch", 
+        "atl_getConfluencePage",
+        "atl_getJiraIssue",
+        "atl_addCommentToJiraIssue",
+        "atl_getVisibleJiraProjects",
+        "atl_searchJiraIssuesUsingJql",
+        "atl_searchConfluenceUsingCql",
+        "atl_getConfluenceSpaces",
+        "atl_getPagesInConfluenceSpace",
+        "atl_getConfluencePageFooterComments",
+        "atl_getConfluencePageInlineComments",
+        "atl_getJiraIssueRemoteIssueLinks",
+        "atl_getTransitionsForJiraIssue",
+        "atl_lookupJiraAccountId",
+        "atl_getJiraProjectIssueTypesMetadata",
+        "atl_getJiraIssueTypeMetaWithFields"
+      ]
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y", 
+        "@modelcontextprotocol/server-github@latest"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "disabled": false,
+      "alwaysAllow": [
+        "github_search_repositories",
+        "github_search_code", 
+        "github_search_issues",
+        "github_search_pull_requests",
+        "github_search_users",
+        "github_get_file_contents",
+        "github_list_issues",
+        "github_list_pull_requests",
+        "github_list_commits",
+        "github_list_branches",
+        "github_list_releases",
+        "github_list_tags",
+        "github_issue_read",
+        "github_pull_request_read",
+        "github_get_commit",
+        "github_get_me",
+        "github_get_latest_release",
+        "github_get_release_by_tag",
+        "github_get_tag",
+        "github_get_teams",
+        "github_get_team_members",
+        "github_create_or_update_file",
+        "github_create_pull_request",
+        "github_create_repository",
+        "github_create_branch",
+        "github_update_pull_request",
+        "github_update_pull_request_branch",
+        "github_delete_file",
+        "github_fork_repository",
+        "github_push_files",
+        "github_pull_request_review_write",
+        "github_request_copilot_review",
+        "github_sub_issue_write"
+      ]
+    },
+    "gitkraken": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gitkraken@latest" 
+      ],
+      "env": {
+        "GITKRAKEN_API_TOKEN": "${GITKRAKEN_API_TOKEN}"
+      },
+      "disabled": true,
+      "alwaysAllow": [
+        "git_status",
+        "git_log_or_diff", 
+        "git_add_or_commit",
+        "git_push",
+        "git_checkout",
+        "git_branch",
+        "git_stash",
+        "git_blame",
+        "git_worktree",
+        "pull_request_assigned_to_me",
+        "pull_request_get_detail",
+        "pull_request_get_comments",
+        "pull_request_create",
+        "pull_request_create_review",
+        "issues_assigned_to_me",
+        "issues_get_detail", 
+        "issues_add_comment",
+        "repository_get_file_content",
+        "gitkraken_workspace_list"
+      ]
+    },
+    "pylance": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-pylance@latest"
+      ],
+      "disabled": false,
+      "alwaysAllow": [
+        "pylanceDocuments",
+        "pylanceFileSyntaxErrors",
+        "pylanceImports", 
+        "pylanceInstalledTopLevelModules",
+        "pylanceInvokeRefactoring",
+        "pylancePythonEnvironments",
+        "pylanceRunCodeSnippet",
+        "pylanceSettings",
+        "pylanceSyntaxErrors",
+        "pylanceUpdatePythonEnvironment",
+        "pylanceWorkspaceRoots",
+        "pylanceWorkspaceUserFiles"
+      ]
+    }
+  },
+  "defaultModel": "claude-3-5-sonnet-20241022",
+  "customInstructions": [
+    "You are a helpful AI assistant with access to development tools and services.",
+    "Use MCP tools to interact with Atlassian (Jira/Confluence), GitHub, GitKraken, and Python/Pylance.",
+    "Always verify permissions before performing write operations.",
+    "For Atlassian: Never perform write operations unless explicitly requested.",
+    "For GitHub: Explain what changes will be made before creating/updating files or PRs.",
+    "For Python: Use pylance tools for code analysis, syntax checking, and environment management.",
+    "Provide clear explanations of actions taken and results obtained."
+  ]
+}
