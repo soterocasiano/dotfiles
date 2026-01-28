@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+set -e
+
+DEVEL_DIR="${HOME}/devel"
+
+if [[ ! -d "$DEVEL_DIR" ]]; then
+    echo "Error: $DEVEL_DIR directory does not exist"
+    exit 1
+fi
+
+echo "Processing repositories in $DEVEL_DIR..."
+echo ""
+
+for repo in "$DEVEL_DIR"/*; do
+    if [[ -d "$repo/.git" ]]; then
+        repo_name=$(basename "$repo")
+        echo "==> Processing: $repo_name"
+
+        cd "$repo"
+
+        # Check if main branch exists, otherwise use master
+        if git show-ref --verify --quiet refs/heads/main; then
+            branch="main"
+        elif git show-ref --verify --quiet refs/heads/master; then
+            branch="master"
+        else
+            echo "    ⚠️  Neither main nor master branch found, skipping"
+            echo ""
+            continue
+        fi
+
+        # Checkout the branch
+        if git checkout "$branch" 2>/dev/null; then
+            echo "    ✓ Checked out $branch"
+        else
+            echo "    ⚠️  Failed to checkout $branch"
+            echo ""
+            continue
+        fi
+
+        # Pull latest changes
+        if git pull 2>/dev/null; then
+            echo "    ✓ Pulled latest changes"
+        else
+            echo "    ⚠️  Failed to pull (may have uncommitted changes or conflicts)"
+        fi
+
+        echo ""
+    fi
+done
+
+echo "Done!"

@@ -1,0 +1,160 @@
+#!/bin/zsh
+
+# Version Update Script
+# Usage: vu <environment> <version>
+# Example: vu uat 10.5.0.10
+
+set -e
+
+# Parse arguments
+ENV=""
+VERSION=""
+CONFIG_NUM=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c)
+            CONFIG_NUM="$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "$ENV" ]; then
+                ENV="$1"
+            elif [ -z "$VERSION" ]; then
+                VERSION="$1"
+            else
+                echo "Error: Unknown argument '$1'"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Check if required arguments provided
+if [ -z "$ENV" ] || [ -z "$VERSION" ]; then
+    echo "Error: Missing required arguments"
+    echo "Usage: vu <environment> <version> [-c <config_number>]"
+    echo "Example: vu uat 10.5.0.10"
+    echo "Example: vu prd 10.5.0.10 -c 1"
+    exit 1
+fi
+
+# Verify we're in a git repository
+if [ ! -d .git ]; then
+    echo "Error: Not in a git repository"
+    exit 1
+fi
+
+# Check if environment directory exists
+ENV_DIR="/Users/w526201/devel/iac-mobile-server-inventory/$ENV"
+DEPLOY_MANIFEST="$ENV_DIR/group_vars/all/deploy_manifest.yml"
+
+if [ ! -d "$ENV_DIR" ]; then
+    echo "Error: Environment directory '$ENV' not found"
+    echo "Available environments:"
+    ls -d /Users/w526201/devel/iac-mobile-server-inventory/*/ 2>/dev/null | grep -E '/(dev|uat|prd)/$' | xargs -n 1 basename || echo "None found"
+    exit 1
+fi
+
+if [ ! -f "$DEPLOY_MANIFEST" ]; then
+    echo "Error: deploy_manifest.yml not found at $DEPLOY_MANIFEST"
+    exit 1
+fi
+
+echo "Updating $ENV environment to version $VERSION..."
+
+# Get the remote URL for generating the branch link
+REMOTE_URL=$(git config --get remote.origin.url)
+if [[ $REMOTE_URL == git@github.com:* ]]; then
+    # Convert SSH URL to HTTPS
+    REPO_PATH=$(echo $REMOTE_URL | sed 's/git@github.com://' | sed 's/.git$//')
+    BASE_URL="https://github.com/$REPO_PATH"
+elif [[ $REMOTE_URL == https://github.com/* ]]; then
+    BASE_URL=$(echo $REMOTE_URL | sed 's/.git$//')
+else
+    BASE_URL=""
+fi
+
+# Stash any uncommitted changes
+STASH_RESULT=$(git stash)
+
+# Checkout master and pull latest
+echo "Checking out master branch..."
+git checkout master
+git pull origin master
+
+# Create new branch
+BRANCH_NAME="${ENV}-${VERSION}"
+echo "Creating branch: $BRANCH_NAME"
+git checkout -b "$BRANCH_NAME"
+
+# Update the app_version in deploy_manifest.yml
+echo "Updating app_version in $DEPLOY_MANIFEST..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    sed -i '' "s/^app_version: .*/app_version: $VERSION/" "$DEPLOY_MANIFEST"
+else
+    # Linux
+    sed -i "s/^app_version: .*/app_version: $VERSION/" "$DEPLOY_MANIFEST"
+fi
+
+# Verify the change
+if grep -q "^app_version: $VERSION" "$DEPLOY_MANIFEST"; then
+    echo "✓ Successfully updated app_version to $VERSION"
+else
+    echo "✗ Failed to update app_version"
+    exit 1
+fi
+
+# Update config_ref if -c flag was provided
+if [ -n "$CONFIG_NUM" ]; then
+    CONFIG_REF="${VERSION}-${CONFIG_NUM}"
+    echo "Updating config_ref in $DEPLOY_MANIFEST..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s/^config_ref: .*/config_ref: $CONFIG_REF/" "$DEPLOY_MANIFEST"
+    else
+        # Linux
+        sed -i "s/^config_ref: .*/config_ref: $CONFIG_REF/" "$DEPLOY_MANIFEST"
+    fi
+
+    # Verify the change
+    if grep -q "^config_ref: $CONFIG_REF" "$DEPLOY_MANIFEST"; then
+        echo "✓ Successfully updated config_ref to $CONFIG_REF"
+    else
+        echo "✗ Failed to update config_ref"
+        exit 1
+    fi
+fi
+
+# Commit and push changes
+echo "Committing changes..."
+git add "$DEPLOY_MANIFEST"
+if [ -n "$CONFIG_NUM" ]; then
+    git commit -m "Update $ENV app_version to $VERSION and config_ref to ${VERSION}-${CONFIG_NUM}"
+else
+    git commit -m "Update $ENV app_version to $VERSION"
+fi
+
+echo "Pushing branch to remote..."
+git push -u origin "$BRANCH_NAME"
+
+# Output the branch link
+echo ""
+echo "✓ Changes pushed successfully!"
+echo ""
+if [ -n "$BASE_URL" ]; then
+    echo "Branch URL: $BASE_URL/tree/$BRANCH_NAME"
+    echo "Create PR:  $BASE_URL/compare/$BRANCH_NAME?expand=1"
+else
+    echo "Branch: $BRANCH_NAME"
+fi
+echo ""
+
+# Pop stash if there were changes
+if [[ $STASH_RESULT != "No local changes to save" ]]; then
+    echo "Restoring stashed changes..."
+    git checkout master
+    git stash pop
+fi
