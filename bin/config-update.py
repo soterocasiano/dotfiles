@@ -133,7 +133,7 @@ def process_property(property: dict):
             property_file_paths.append(build_path(env, tier, module))
         for file_path in property_file_paths:
             actionalize_property(property_name, value, action, file_path)
-    return 0
+    return property_file_paths
 
 def main():
     parser = argparse.ArgumentParser(
@@ -145,12 +145,14 @@ def main():
     parser.add_argument("tier_configs_dir_arg", nargs="?", default="")
     parser.add_argument("mobile_documentation_dir_arg", nargs="?", default="")
     parser.add_argument("--dry-run", action="store_true", help="Print actions without applying changes or creating branches")
+    parser.add_argument("--push", action="store_true", help="Push branch and open a PR after applying changes")
     parsed = parser.parse_args()
 
-    global tier_configs_dir, mobile_documentation_dir, dry_run, env
+    global tier_configs_dir, mobile_documentation_dir, dry_run, env, push
     config_version = parsed.config_version
     env = parsed.env
     dry_run = parsed.dry_run
+    push = parsed.push
     tier_configs_dir = parsed.tier_configs_dir_arg or os.environ.get("TIER_CONFIGS_DIR", "")
     mobile_documentation_dir = parsed.mobile_documentation_dir_arg or os.environ.get("MOBILE_DOCUMENTATION_DIR", "")
 
@@ -207,8 +209,33 @@ def main():
                 if(header.strip() == "### Properties Changes:"):
                     property_changes = parse_properties(body.strip())
 
+    files_changed = []
     for property in property_changes:
-        process_property(property)
+        files_changed.append(process_property(property))
+
+    files_changed_flat = [item for sublist in files_changed for item in sublist]
+
+    if push:
+        if dry_run:
+            print(f"[dry-run] Would git add, commit, push '{new_branch}', and open a PR")
+        else:
+            for f in files_changed_flat:
+                subprocess.run(["git", "-C", tier_configs_dir, "add", f], check=True)
+            subprocess.run(["git", "-C", tier_configs_dir, "commit", "-m", f"config update {config_version} for {env}"], check=True)
+            subprocess.run(["git", "-C", tier_configs_dir, "push", "--set-upstream", "origin", new_branch], check=True)
+            result = subprocess.run(
+                ["gh", "pr", "create",
+
+                 "--head", new_branch,
+                 "--base", branch,
+                 "--title", f"Config update {config_version} for {env}",
+                 "--body", f"Automated config update for version {config_version} in environment {env}."],
+                capture_output=True, text=True, cwd=tier_configs_dir
+            )
+            if result.returncode != 0:
+                print(f"Failed to open PR:\n{result.stderr.strip()}")
+                sys.exit(result.returncode)
+            print(f"PR opened: {result.stdout.strip()}")
 
 if __name__ == "__main__":
     main()
