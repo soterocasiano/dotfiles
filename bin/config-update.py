@@ -82,7 +82,7 @@ def actionalize_property(property_name: str, value: str, action: str, file_path:
     lines = path.read_text().splitlines(keepends=True)
     action = action.strip().lower()
 
-    if action == "add":
+    if action in ("add", "new"):
         if dry_run:
             print(f"  [dry-run] Would add '{property_name}={value}' to {file_path}")
             return
@@ -199,7 +199,6 @@ def main():
     for file in version_dir.rglob("*"):
         if file.is_file():
             print(f"Processing: {file}")
-            # TODO: process file content
             content = file.read_text()
             sections = re.split(r'(?=^### )', content, flags=re.MULTILINE)
             for section in sections:

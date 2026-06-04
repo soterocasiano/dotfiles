@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTANCE_ID="i-0a936db20b1cdb338"
+PROFILE="wawa-prd"
+
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq is required" >&2
+    exit 1
+fi
+
+echo "Connecting to ${INSTANCE_ID} via SSM (profile: ${PROFILE})..."
+
+# Runs on the remote EC2 instance as root:
+#   1. Generate a short-lived RDS IAM auth token
+#   2. Open an interactive MySQL session using that token
+REMOTE_CMD=$(cat << 'REMOTE'
+sudo bash -c 'export PATH=$PATH:/usr/local/bin:/usr/bin:/bin && TOKEN=$(aws rds generate-db-auth-token --username "IAM_datadog_dbm" --hostname "mobappprd.cluster-ro-csc15tpvywxr.us-east-1.rds.amazonaws.com" --port 3306) && exec mysql --host="mobappprd.cluster-ro-csc15tpvywxr.us-east-1.rds.amazonaws.com" --port=3306 --user="IAM_datadog_dbm" --password="$TOKEN" --ssl-ca=/etc/pki/tls/certs/ca-bundle.crt --ssl-mode=VERIFY_CA --enable-cleartext-plugin'
+REMOTE
+)
+
+aws ssm start-session \
+    --target "$INSTANCE_ID" \
+    --profile "$PROFILE" \
+    --document-name "AWS-StartInteractiveCommand" \
+    --parameters "$(jq -n --arg cmd "$REMOTE_CMD" '{"command": [$cmd]}')"
