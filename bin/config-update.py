@@ -19,7 +19,7 @@ repo_tiers = {
     "api-mobile-promotion-discount-service": ["islb", "islc"],
     "api-mobile-notification-service": ["islb", "islc"],
     "api-mobile-backend-fcm": ["islb"],
-    "api-mobile-backend-lcm": ["islb"],
+    "api-mobile-backend-lcm": ["islb"], 
     "api-mobile-backend-rcm": ["islb"],
     "api-mobile-batch-services": ["batch", "mw"],
     "api-mobile-server-lambda": ["batch"],

@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+# Helper: Retry kubectl command if it fails due to Segmentation fault
+kubectl_retry() {
+  kubectl "$@" || {
+    if [ $? -eq 139 ]; then
+      echo "⚠️ kubectl command failed with 'Segmentation fault'. Retrying in 1 second ..."
+      sleep 1
+      kubectl "$@"
+    else
+      return $?
+    fi
+  }
+}
+
+# Helper: Get list of old nodes based on AMI ID
+get_old_nodes() {
+  kubectl_retry get nodeclaims -o json | \
+    jq -r --arg AMI "$1" '
+      .items[]
+      | select(.status.imageID == $AMI)
+      | .status.nodeName
+    '
+}
+
+print_line_separator() {
+  echo "----------------------------------------"
+}
+
+show_pdb_blockers_node() {
+  local NODE="$1"
+  echo "🔎 Preflight PDB check for node: $NODE"
+
+  local out blockers
+  out="$(kubectl_retry drain "$NODE" --delete-emptydir-data --ignore-daemonsets --dry-run=server --timeout=4s 2>&1 || true)"
+  blockers="$(echo "$out" \
+    | sed -nE 's/.*cannot evict pod "([^"]+)".*/\1/p' \
+    | sort -u || true)"
+  if [[ -n "${blockers:-}" ]]; then
+    echo "‼️ Pods predicted to violate PDBs (will not be evicted):"
+    echo "$blockers" | sed 's/^/   - /'
+  else
+    echo "  No PDB violations predicted on this node."
+  fi
+}
+
+# Helper: Convert seconds to a human-readable duration (e.g., "2d 4h", "3h 12m", "15m")
+human_duration() {
+  local sec d h m
+  sec=${1:-0}
+  d=$((sec / 86400))
+  h=$(((sec % 86400) / 3600))
+  m=$(((sec % 3600) / 60))
+  if [[ "$d" -gt 0 ]]; then
+    printf "%dd %dh" "$d" "$h"
+  elif [[ "$h" -gt 0 ]]; then
+    printf "%dh %dm" "$h" "$m"
+  else
+    printf "%dm" "$m"
+  fi
+  return 0
+}
+
+usage() {
+  echo "Usage: $0 [--namespace <namespace>] [age]"
+  echo ""
+  echo "Options:"
+  echo "  --namespace, -n <namespace>   Namespace to scope kubectl operations (e.g. kube-system)."
+  echo "                                Defaults to the current kubectl namespace / context default."
+  echo ""
+  echo "Arguments:"
+  echo "  [age]   Optional. If specified, only nodes older than this duration"
+  echo "          (e.g. '30m', '1h', '24h') will be replaced."
+  echo ""
+  echo "This script will replace all nodes running an old AMI or older than"
+  echo "the specified age with new nodes."
+  exit 1
+}
+
+# --- Argument parsing ---
+NAMESPACE=""
+AGE_FILTER=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --namespace|-n)
+      shift
+      if [[ -z "${1:-}" ]]; then
+        echo "❌ ERROR: --namespace requires a value." >&2
+        usage
+      fi
+      NAMESPACE="$1"
+      shift
+      ;;
+    --help|-h)
+      usage
+      ;;
+    -*)
+      echo "❌ ERROR: Unknown option '$1'." >&2
+      usage
+      ;;
+    *)
+      if [[ -n "$AGE_FILTER" ]]; then
+        echo "❌ ERROR: Unexpected argument '$1'." >&2
+        usage
+      fi
+      AGE_FILTER="$1"
+      shift
+      ;;
+  esac
+done
+
+# Build namespace flag for kubectl commands that accept it
+NS_FLAG=()
+if [[ -n "$NAMESPACE" ]]; then
+  NS_FLAG=(--namespace "$NAMESPACE")
+  echo "📂 Namespace scope: $NAMESPACE"
+fi
+
+CURRENT_CONTEXT="$(kubectl_retry config current-context)"
+echo "☸️ Current kubectl context: $CURRENT_CONTEXT"
+
+# Early check: Verify target AMI is available
+print_line_separator
+echo "🔍 Verifying target AMI availability..."
+TARGET_AMI_ID="$(kubectl_retry get ec2nodeclasses default -o=jsonpath='{.spec.amiSelectorTerms[0].id}')"
+echo "🎯 Target AMI ID: $TARGET_AMI_ID"
+
+if ! aws ec2 describe-images --region us-east-1 --image-ids "$TARGET_AMI_ID" --output json 2>/dev/null | jq -e '.Images | length > 0' >/dev/null; then
+  echo "❌ ERROR: Target AMI '$TARGET_AMI_ID' is not available in this AWS account." >&2
+  echo "Please verify the AMI ID and ensure it exists in the correct region before running this script." >&2
+  exit 1
+fi
+
+AMI_STATE="$(aws ec2 describe-images --region us-east-1 --image-ids "$TARGET_AMI_ID" --output json | jq -r '.Images[0].State')"
+if [ "$AMI_STATE" != "available" ]; then
+  echo "❌ ERROR: Target AMI '$TARGET_AMI_ID' is not in 'available' state. Current state: $AMI_STATE" >&2
+  exit 1
+fi
+
+echo "✅ Target AMI is available and ready to use."
+
+# Step 1: Find old nodes
+print_line_separator
+echo "🔍 Finding old nodes ..."
+
+if [[ -n "$AGE_FILTER" ]]; then
+  echo "⏳ Age filter specified: $AGE_FILTER. Only nodes older than this will be replaced."
+  AGE_SECONDS="$(echo "$AGE_FILTER" | awk '
+    /s$/ {print substr($0, 1, length($0)-1) * 1; exit}
+    /m$/ {print substr($0, 1, length($0)-1) * 60; exit}
+    /h$/ {print substr($0, 1, length($0)-1) * 3600; exit}
+    /d$/ {print substr($0, 1, length($0)-1) * 86400; exit}
+  ')"
+
+  if ! echo "$AGE_SECONDS" | grep -Eq '^[0-9]+$'; then
+    echo "❌ ERROR: Invalid age filter '$AGE_FILTER'. Use formats like '30m', '1h', '24h', or '90s'." >&2
+    exit 1
+  fi
+
+  OLD_IFS="$IFS"
+  IFS=$'\n'
+  OLD_NODES_WITH_AGE=($(kubectl_retry get nodeclaims -o json --sort-by=.metadata.creationTimestamp | jq -r --argjson seconds "$AGE_SECONDS" '
+    .items[]
+    | (now - (.metadata.creationTimestamp | fromdateiso8601)) as $age
+    | select($age >= $seconds)
+    | "\(.status.nodeName) \($age|floor)"
+  '))
+  IFS="$OLD_IFS"
+
+  if [ ${#OLD_NODES_WITH_AGE[@]} -eq 0 ]; then
+    echo "👍 No nodes found older than $AGE_FILTER. All nodes in $CURRENT_CONTEXT cluster are newer than this."
+    exit 0
+  else
+    echo "Found ${#OLD_NODES_WITH_AGE[@]} nodes older than $AGE_FILTER:"
+    for item in "${OLD_NODES_WITH_AGE[@]}"; do
+      node_name="$(echo "$item" | awk '{print $1}')"
+      node_age_sec="$(echo "$item" | awk '{print $2}')"
+      echo " - $node_name age: $(human_duration "$node_age_sec")"
+    done
+  fi
+
+  OLD_NODES=()
+  for item in "${OLD_NODES_WITH_AGE[@]}"; do
+    OLD_NODES+=("$(echo "$item" | awk '{print $1}')")
+  done
+else
+  NEW_AMI_ID="$(kubectl_retry get ec2nodeclasses default -o=jsonpath='{.spec.amiSelectorTerms[0].id}')"
+  set +e
+  OLD_AMI_ID="$(kubectl_retry get nodeclaims -o=json | jq -r '.items[].status.imageID' | sort -u | grep -v $NEW_AMI_ID)"
+  if [ $? -ne 0 ]; then
+    echo "👍 No nodes found with old AMI ID. All nodes in $CURRENT_CONTEXT cluster were launched with the new AMI ($NEW_AMI_ID)."
+    exit 0
+  fi
+  set -e
+  echo "💿 AMI IDs:"
+  echo "  🧨 Old: $OLD_AMI_ID"
+  echo "  🌱 New: $NEW_AMI_ID"
+
+  echo "🔍 Finding nodes running old AMI: $OLD_AMI_ID ..."
+  OLD_NODES=($(get_old_nodes $OLD_AMI_ID))
+
+  echo "Found ${#OLD_NODES[@]} old nodes:"
+  printf ' - %s\n' "${OLD_NODES[@]}"
+fi
+
+if [ ${#OLD_NODES[@]} -eq 0 ]; then
+  echo "✅ No old nodes found. Nothing to do."
+  exit 0
+fi
+
+read -p "⁉️ Are you sure you want to replace old nodes with new nodes❓ (y/N): " confirm
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+  echo "❌ Aborting."
+  exit 0
+fi
+
+# Step 2: Preflight PDB check (no changes made)
+print_line_separator
+echo "🧪 Checking for pods that would not be evicted due to PDB constraints..."
+for NODE in "${OLD_NODES[@]}"; do
+  show_pdb_blockers_node "$NODE"
+done
+read -p "⁉️ Continue❓ (y/N): " confirm
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+  echo "❌ Aborting."
+  exit 0
+fi
+
+# Step 3: Cordon all old nodes
+print_line_separator
+echo "⛔ Cordoning all old nodes..."
+for NODE in "${OLD_NODES[@]}"; do
+  kubectl_retry cordon "$NODE"
+done
+
+# Step 4: Drain nodes one by one
+for NODE in "${OLD_NODES[@]}"; do
+  print_line_separator
+  echo "🚦 Draining node: $NODE ..."
+  kubectl_retry drain "$NODE" \
+    --delete-emptydir-data \
+    --ignore-daemonsets \
+    "${NS_FLAG[@]}"
+
+  print_line_separator
+  echo "🔌 Deleting node object: $NODE ..."
+  kubectl_retry delete node "$NODE" --wait=false
+done
+
+print_line_separator
+echo "🎉 Rotation (A.K.A. node dance) complete."

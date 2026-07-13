@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+
+USAGE='kctx [<context-name-prefix>]'
+
+search="$1"
+
+if ! (which kubectl > /dev/null); then
+    echo "Requires kubectl"
+    exit 3
+fi
+
+if ! (which fzf > /dev/null); then
+    echo "Requires fzf"
+    exit 3
+fi
+
+current=$(kubectl config current-context 2>/dev/null)
+
+context=$(kubectl config get-contexts -o name \
+    | fzf -q "$search" --select-1 \
+        --prompt="Select kubectl context: " \
+        --header="Current: ${current:-none}")
+
+if [ -z "$context" ]; then
+    echo "No context selected"
+    exit 4
+fi
+
+kubectl config use-context "$context"
