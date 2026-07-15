@@ -19,10 +19,21 @@
         state: link
       loop:
         - name: showcert
-        - name: awssm
+        - name: awsssm
         - name: ec2-cache-instances
         - name: ec2-cache-clear
         - name: check-service-running
+        - name: codefresh-build-apps
+        - name: config-update.py
+          rename: config-update
+        - name: karpenter-replace-nodes
+        - name: kctx
+        - name: macos-cacerts.zsh
+        - name: prd-mysql
+        - name: rebase
+        - name: sso
+        - name: teach
+        - name: vu
       when: item.condition | default(true)
 
     - name: Include other tasks
