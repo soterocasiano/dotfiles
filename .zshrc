@@ -94,3 +94,4 @@ export SUPPORT_DIR="/Users/w526201/devel/iac-mobile-mobapp-support"
 export NODE_NO_WARNINGS=1
 
 export ARTIFACTORY_USER="sotero.casiano@wawa.com"
+export TEACHING_DIR="/Users/w526201/personal/agent-lessons"

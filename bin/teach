@@ -1,0 +1,57 @@
+#!/usr/bin/env sh
+
+# Generates a lesson via $TEACHING_DIR/scripts/generate_lesson.py.
+# All arguments are forwarded as-is, e.g.:
+#   teach --topic "Introduction to Recursion" \
+#       --audience "High school students, no prior programming experience" \
+#       --duration 60 \
+#       --setting classroom \
+#       --goal "Understand recursion and write a simple recursive function" \
+#       --prior-knowledge "Basic Python syntax, loops"
+USAGE='teach --topic <topic> [--audience <audience>] [--duration <minutes>] [--setting <setting>] [--goal <goal>] [--prior-knowledge <prior-knowledge>]'
+
+# Defaults used for any flag not passed in.
+duration=60
+setting="1-on-1"
+audience="General audience, no prior experience assumed"
+prior_knowledge="None"
+goal="Understand the fundamentals of the topic"
+topic=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --topic) topic="$2"; shift 2 ;;
+        --audience) audience="$2"; shift 2 ;;
+        --duration) duration="$2"; shift 2 ;;
+        --setting) setting="$2"; shift 2 ;;
+        --goal) goal="$2"; shift 2 ;;
+        --prior-knowledge) prior_knowledge="$2"; shift 2 ;;
+        *) echo "Unknown argument: $1"; echo "$USAGE"; exit 1 ;;
+    esac
+done
+
+if [ -z "$topic" ]; then
+    echo "Please provide a --topic"
+    echo "$USAGE"
+    exit 1
+fi
+
+if [ -z "$TEACHING_DIR" ]; then
+    echo "Please define your TEACHING_DIR"
+    exit 3
+fi
+
+if [ ! -d "$TEACHING_DIR" ]; then
+    echo "TEACHING_DIR ($TEACHING_DIR) does not exist"
+    exit 3
+fi
+
+. "$TEACHING_DIR/.venv/bin/activate"
+
+python "$TEACHING_DIR/scripts/generate_lesson.py" \
+    --topic "$topic" \
+    --audience "$audience" \
+    --duration "$duration" \
+    --setting "$setting" \
+    --goal "$goal" \
+    --prior-knowledge "$prior_knowledge"
