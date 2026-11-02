@@ -70,6 +70,14 @@ kx() {
     fi
 }
 
+gcmp() {
+    if [ "$1" = "-f" ]; then
+        git checkout master -f && git pull -f
+    else
+        git checkout master && git pull
+    fi
+}
+
 alias ack='echo "Use ag"'
 alias awsprofiles="grep '^\[profile' ~/.aws/config | cut -d' ' -f2 | cut -d']' -f1 | sort"
 alias ccat='pygmentize -g'
